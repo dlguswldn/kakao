@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>교통맵</title>
-    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=dde5fcc52a30781e19e84123832d0003&libraries=services"></script>
+    <title>교통 및 정류장 검색 서비스</title>
+    <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=dde5fcc52a30781e19e84123832d0003&libraries=services"></script>
     <style>
         /* 기본 스타일 초기화 */
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -13,7 +13,7 @@
         /* 화면 분할 레이아웃 */
         .container { display: flex; width: 100%; height: 100vh; }
 
-        /* 왼쪽 사이드바 (검색창 및 결과 리스트) */
+        /* 왼쪽 사이드바 */
         .sidebar {
             width: 350px;
             height: 100%;
@@ -34,8 +34,8 @@
         }
         .search-box button {
             width: 20%;
-            padding: 10px 0;
-            background: #fae100; /* 카카오 노란색 */
+            padding: 10px;
+            background: #fae100;
             border: none;
             cursor: pointer;
             border-radius: 4px;
@@ -57,12 +57,15 @@
         }
         .place-item:hover { background: #fffde0; }
         
-        /* 교통 정보 표시 스타일 */
-        .traffic-info {
-            font-size: 11px;
-            color: #ff5722;
+        /* 실시간 정보 가상 스타일 */
+        .bus-info {
+            display: inline-block;
             margin-top: 5px;
-            font-weight: bold;
+            font-size: 12px;
+            color: #e53935;
+            background: #ffebee;
+            padding: 2px 6px;
+            border-radius: 3px;
         }
 
         /* 오른쪽 지도 영역 */
@@ -73,12 +76,13 @@
 
 <div class="container">
     <div class="sidebar">
-        <h2>교통 및 장소 검색</h2>
+        <h2>교통/정류장 검색</h2>
         <div class="search-box">
-            <input type="text" id="keyword" placeholder="정류장, 역 이름 입력">
+            <input type="text" id="keyword" placeholder="장소나 정류장 입력">
             <button onclick="searchPlaces()">검색</button>
         </div>
-        <ul id="result-list"></ul>
+        <ul id="result-list">
+        </ul>
     </div>
 
     <div id="map"></div>
@@ -88,11 +92,11 @@
     let map; // 지도 객체
     let ps;  // 장소 검색 객체
     let infowindow; // 인포윈도우 객체
-    let markers = []; // 생성된 마커들을 담을 배열
+    let markers = []; // 생성된 마커들을 관리할 배열 (기존 마커 삭제용)
 
-    // 마커 이미지 경로 (카카오맵 기본 마커 이미지 활용 및 외부 무료 핀 이미지 활용)
-    const BUS_MARKER_IMAGE = "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png"; // 빨간색/별 형태 혹은 기본 마커 대체용
-    const SUBWAY_MARKER_IMAGE = "https://t1.daumcdn.net/localimg/localimages/07/2012/img/marker_p.png"; // 파란색 P 마커 이미지 (구분을 위해 사용)
+    // 마커 색상 구분을 위한 카카오 기본 마커 이미지 주소 (빨강, 파랑)
+    const redMarkerUrl = "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png"; // 버스정류장용 (별 마커 예시)
+    const blueMarkerUrl = "https://t1.daumcdn.net/localimg/localimages/07/2012/img/marker_p.png";    // 지하철역용 (파란색 P 마커)
 
     // 페이지 로드 시 실행
     window.onload = function() {
@@ -110,27 +114,33 @@
         // 지도 생성
         map = new kakao.maps.Map(mapContainer, mapOption);
         
-        // 교통정보 레이어 추가
-        map.addOverlayMapTypeId(kakao.maps.MapTypeId.TRAFFIC);
+        // [기능 추가] 실시간 교통정보를 지도 위에 표시합니다
+        map.addOverlayMapTypeId(kakao.maps.OverlayMapTypeId.TRAFFIC);
         
         // 장소 검색 객체 생성
         ps = new kakao.maps.services.Places();
         
-        // 검색 결과 클릭 시 정보를 표시할 인포윈도우 생성
+        // 인포윈도우 생성
         infowindow = new kakao.maps.InfoWindow({zIndex:1});
 
-        // 현재 위치 가져오기 (HTML5 Geolocation)
+        // [기능 수정] 현재 위치 가져오기 (실패하더라도 지도가 멈추지 않게 완전히 분리)
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(function(position) {
                 const lat = position.coords.latitude;
                 const lon = position.coords.longitude;
                 const locPosition = new kakao.maps.LatLng(lat, lon);
 
-                // 지도의 중심을 현재 위치로 변경
+                // 지도의 중심을 내 실제 위치로 이동
                 map.setCenter(locPosition);
                 
-                // 현재 위치 마커 표시 (옵션 없이 기본 마커로 내 위치 표시)
-                displayMarker(locPosition, "내 위치", "현재 위치에 있습니다.", null);
+                // 내 위치에는 기본 마커로 "내 위치" 표시
+                const myMarker = new kakao.maps.Marker({
+                    map: map,
+                    position: locPosition
+                });
+                markers.push(myMarker);
+            }, function(error) {
+                console.log("보안 또는 환경 문제로 현재 위치를 가져올 수 없어 기본 위치를 사용합니다.");
             });
         }
     }
@@ -143,9 +153,6 @@
             alert('키워드를 입력해주세요!');
             return false;
         }
-
-        // 새로운 검색을 시작하므로 기존 마커들을 모두 삭제
-        removeMarkers();
 
         // 카카오 API로 장소 검색 요청
         ps.keywordSearch(keyword, placesSearchCB);
@@ -167,91 +174,98 @@
         const listEl = document.getElementById('result-list');
         const bounds = new kakao.maps.LatLngBounds();
         
-        listEl.innerHTML = ''; // 이전 결과 리스트 초기화
+        // 새로운 검색을 하므로 기존 마커 지우기
+        removeMarkers();
+        listEl.innerHTML = ''; // 이전 결과 리스트 삭제
 
         for (let i = 0; i < places.length; i++) {
             const placePosition = new kakao.maps.LatLng(places[i].y, places[i].x);
-            const itemEl = getListItem(i, places[i]); // 검색 결과 항목 생성
-
-            // 장소 카테고리나 이름을 확인하여 마커 종류(색상) 결정
-            let markerType = 'default';
-            if (places[i].category_name.includes('지하철역') || places[i].place_name.includes('역')) {
-                markerType = 'subway';
-            } else if (places[i].category_name.includes('버스터미널') || places[i].category_name.includes('정류장') || places[i].place_name.includes('정류장')) {
-                markerType = 'bus';
+            
+            // [기능 추가] 지하철역과 버스정류장 구별하여 마커 색상 지정하기
+            let markerColor = "red"; // 기본값 빨강
+            // 카테고리 이름이나 장소명에 '지하철역' 또는 '역'이 포함되어 있으면 파란색으로 변경
+            if (places[i].category_name.includes('지하철역') || places[i].place_name.endsWith('역')) {
+                markerColor = "blue";
             }
 
-            // 마커 표시 (지하철역은 파랑색 계열 이미지, 버스는 빨강/별 이미지)
-            const marker = displayMarker(placePosition, places[i].place_name, places[i].address_name, markerType);
+            // 지도에 마커 표시 (색상 구분값 포함)
+            const marker = displayMarker(placePosition, places[i].place_name, places[i].address_name, markerColor);
 
-            // 검색된 장소 위치를 기준으로 지도 범위 재설정 위해 좌표 추가
+            // 왼쪽 리스트에 넣을 아이템 생성
+            const itemEl = getListItem(i, places[i]); 
+
+            // 지도 범위 재설정을 위해 좌표 추가
             bounds.extend(placePosition);
 
-            // 결과 리스트 클릭 시 해당 위치로 부드럽게 이동 및 팝업창(인포윈도우) 표시
+            // 리스트 클릭 시 해당 마커 위치로 이동하고 주소 팝업 띄우기
             itemEl.onclick = function() {
                 map.panTo(placePosition);
-                infowindow.setContent('<div style="padding:5px;font-size:12px;"><strong>' + places[i].place_name + '</strong><br>' + places[i].address_name + '</div>');
+                infowindow.setContent('<div style="padding:10px;font-size:12px;width:200px;"><strong>' + places[i].place_name + '</strong><br><span style="color:#666;">' + places[i].address_name + '</span></div>');
                 infowindow.open(map, marker);
             };
 
             listEl.appendChild(itemEl);
         }
         
-        // 검색된 장소들이 다 보이도록 지도 범위 조정
+        // 검색된 정류장들이 다 보이도록 지도 화면 크기/위치 조정
         map.setBounds(bounds);
     }
 
-    // 검색 결과 리스트 아이템 HTML 생성
+    // 검색 결과 리스트 아이템 HTML 생성 (실시간 정보 포함)
     function getListItem(index, places) {
         const el = document.createElement('li');
         el.className = 'place-item';
         
-        // 리스트 내부에 이름, 주소, 그리고 실시간 버스/지하철 정보 영역(예시)을 삽입
+        // 장소 종류에 따라 실시간 문구 커스텀
+        let infoText = "⏱ [실시간 버스 정보 준비 중]";
+        if (places.category_name.includes('지하철역') || places.place_name.endsWith('역')) {
+            infoText = "🚇 [실시간 열차 정보 준비 중]";
+        }
+
         el.innerHTML = `
             <strong>${places.place_name}</strong><br>
-            <span>${places.address_name}</span>
-            <div class="traffic-info">ⓘ 실시간 도착 정보 준비 중 (공공 데이터 연동 필요)</div>
+            <span style="font-size:13px; color:#666;">${places.address_name}</span><br>
+            <span class="bus-info">${infoText}</span>
         `;
         return el;
     }
 
     // 지도에 마커를 생성하고 표시하는 함수
-    function displayMarker(position, title, address, type) {
-        let markerOption = {
-            map: map,
-            position: position
-        };
+    function displayMarker(position, title, address, color) {
+        let markerImage = null;
 
-        // 타입에 따른 마커 이미지 차별화 코드
-        if (type === 'bus') {
+        // 색상 조건에 따라 마커 이미지 세팅
+        if (color === "blue") {
             const imageSize = new kakao.maps.Size(24, 35);
-            const markerImage = new kakao.maps.MarkerImage(BUS_MARKER_IMAGE, imageSize);
-            markerOption.image = markerImage; // 버스 정류장은 지정된 이미지 사용
-        } else if (type === 'subway') {
-            const imageSize = new kakao.maps.Size(30, 38);
-            const markerImage = new kakao.maps.MarkerImage(SUBWAY_MARKER_IMAGE, imageSize);
-            markerOption.image = markerImage; // 지하철역은 파란색 계열 이미지 사용
+            markerImage = new kakao.maps.MarkerImage(blueMarkerUrl, imageSize);
+        } else if (color === "red") {
+            const imageSize = new kakao.maps.Size(24, 35);
+            markerImage = new kakao.maps.MarkerImage(redMarkerUrl, imageSize);
         }
 
-        const marker = new kakao.maps.Marker(markerOption);
-        
-        // 관리 배열에 마커 추가 (나중에 지우기 위함)
+        const marker = new kakao.maps.Marker({
+            map: map,
+            position: position,
+            image: markerImage // 커스텀 마커 이미지 적용
+        });
+
+        // 마커 삭제를 위해 배열에 저장
         markers.push(marker);
 
-        // 마커 클릭 시 주소 팝업(인포윈도우) 표시 기능
+        // 마커 클릭 시 주소 팝업(인포윈도우) 표시
         kakao.maps.event.addListener(marker, 'click', function() {
-            infowindow.setContent('<div style="padding:5px;font-size:12px;"><strong>' + title + '</strong><br>' + address + '</div>');
+            infowindow.setContent('<div style="padding:10px;font-size:12px;width:200px;"><strong>' + title + '</strong><br><span style="color:#666;">' + address + '</span></div>');
             infowindow.open(map, marker);
         });
 
         return marker;
     }
 
-    // 기존에 지도에 표시되어 있던 마커들을 모두 지우는 함수
+    // 기존 마커들을 지도에서 지우는 함수
     function removeMarkers() {
         for (let i = 0; i < markers.length; i++) {
             markers[i].setMap(null);
-        }
+        }            
         markers = [];
     }
 </script>
