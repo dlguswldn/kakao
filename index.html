@@ -115,6 +115,7 @@
     let map; // 지도 객체
     let ps;  // 장소 검색 객체
     let infowindow; // 인포윈도우 객체
+    let myLocationMarker = null; // 내 위치 마커 객체를 따로 저장할 변수
 
     // 카테고리별 데이터 관리 객체
     let searchData = {
@@ -122,7 +123,7 @@
         parking: []
     };
 
-    // 지도 위에 표시된 마커들을 관리할 객체
+    // 지도 위에 표시된 검색 결과 마커들을 관리할 객체
     let activeMarkers = [];
 
     // 현재 활성화된 탭 상태 ('subway' 또는 'parking')
@@ -131,6 +132,7 @@
     // 카카오 제공 기본 마커 이미지 활용
     const subwayMarkerImg = "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png"; // 지하철 (빨간색)
     const parkingMarkerImg = "https://t1.daumcdn.net/mapjsapi/images/2x/marker.png"; // 주차장 (기본 파란색)
+    const myLocationMarkerImg = "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_green.png"; // 내 위치 (초록색)
 
     // 페이지 로드 시 실행
     window.onload = function() {
@@ -151,7 +153,7 @@
         ps = new kakao.maps.services.Places();
         infowindow = new kakao.maps.InfoWindow({ zIndex: 1 });
 
-        // 현재 위치 가져오기 (HTML5 Geolocation) 및 예외 처리 강화
+        // 현재 위치 가져오기 (HTML5 Geolocation)
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
                 function(position) {
@@ -159,22 +161,49 @@
                     const lat = position.coords.latitude;
                     const lon = position.coords.longitude;
                     const locPosition = new kakao.maps.LatLng(lat, lon);
+                    
+                    // 지도의 중심을 내 위치로 이동
                     map.setCenter(locPosition);
+
+                    // 내 위치 전용 초록색 마커 생성
+                    createMyLocationMarker(locPosition);
                 }, 
                 function(error) {
-                    // 위치 조회 실패 시 (사용자 거부, 보안 미충족 등) 알림창 띄우고 기본위치 유지
                     console.log("Geolocation 실패 사유 코드: " + error.code + " - " + error.message);
                     alert("현재 위치를 가져올 수 없어 기본 위치(서울시청)로 안내합니다. (보안 환경 또는 권한 확인 필요)");
                 },
                 {
-                    enableHighAccuracy: true, // 높은 정확도 요청
-                    timeout: 5000,            // 5초 이내에 응답 없으면 실패 처리
-                    maximumAge: 0             // 캐시된 데이터 사용 안 함
+                    enableHighAccuracy: true,
+                    timeout: 5000,
+                    maximumAge: 0
                 }
             );
         } else {
             alert("이 브라우저에서는 GPS 위치 정보(Geolocation)를 지원하지 않습니다.");
         }
+    }
+
+    // 내 위치 마커 고정 함수 (초록색 마커)
+    function createMyLocationMarker(position) {
+        // 기존에 혹시 생성되어 있다면 제거
+        if (myLocationMarker) {
+            myLocationMarker.setMap(null);
+        }
+
+        const imageSize = new kakao.maps.Size(24, 35);
+        const markerImage = new kakao.maps.MarkerImage(myLocationMarkerImg, imageSize);
+
+        myLocationMarker = new kakao.maps.Marker({
+            map: map,
+            position: position,
+            image: markerImage
+        });
+
+        // 내 위치 마커 클릭 이벤트
+        kakao.maps.event.addListener(myLocationMarker, 'click', function() {
+            infowindow.setContent('<div style="padding:10px; font-size:12px; font-weight:bold; color:#222;">현재 내 위치</div>');
+            infowindow.open(map, myLocationMarker);
+        });
     }
 
     // 키워드 검색 함수 (입력한 중심점 검색)
@@ -349,6 +378,7 @@
         clearScreen();
         searchData.subway = [];
         searchData.parking = [];
+        // ※ 내 위치 마커(myLocationMarker)는 초기화 대상에서 제외하여 상시 고정 상태를 유지합니다.
     }
 </script>
 
